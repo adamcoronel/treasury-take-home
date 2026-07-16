@@ -1,0 +1,63 @@
+{
+  "_note": "Each entry pairs with the identically-named .png in this folder. 'application' is what you'd type into the form's fields. 'expected' documents what the tool should return, for manual sanity-checking.",
+
+  "case1_obvious_pass": {
+    "application": {
+      "brand_name": "OLD TOM DISTILLERY",
+      "class_type": "Kentucky Straight Bourbon Whiskey",
+      "abv": "45% Alc./Vol. (90 Proof)",
+      "net_contents": "750 mL"
+    },
+    "expected": "PASS on every field. All values match the label exactly, warning is present with correct wording and formatting."
+  },
+
+  "case2_abv_mismatch": {
+    "application": {
+      "brand_name": "OLD TOM DISTILLERY",
+      "class_type": "Kentucky Straight Bourbon Whiskey",
+      "abv": "40% Alc./Vol. (80 Proof)",
+      "net_contents": "750 mL"
+    },
+    "expected": "FAIL overall. ABV field FAILs specifically — application says 40%, label says 45%. All other fields PASS."
+  },
+
+  "case3_formatting_near_match": {
+    "application": {
+      "brand_name": "STONE'S THROW",
+      "class_type": "American Gin",
+      "abv": "40% Alc./Vol.",
+      "net_contents": "750 mL"
+    },
+    "expected": "PASS overall. Brand name differs only in casing ('Stone's Throw' on label vs 'STONE'S THROW' in application) — normalization should treat this as an exact match, per Dave's interview note that this shouldn't be flagged as a real mismatch."
+  },
+
+  "case4_missing_warning": {
+    "application": {
+      "brand_name": "RIVERBEND CELLARS",
+      "class_type": "Cabernet Sauvignon",
+      "abv": "13.5% Alc./Vol.",
+      "net_contents": "750 mL"
+    },
+    "expected": "FAIL overall. government_warning field FAILs with 'No government warning statement found on label' — all other fields PASS."
+  },
+
+  "case5_warning_formatting_issue": {
+    "application": {
+      "brand_name": "RIVERBEND CELLARS",
+      "class_type": "Cabernet Sauvignon",
+      "abv": "13.5% Alc./Vol.",
+      "net_contents": "750 mL"
+    },
+    "expected": "WARNING overall. Warning text wording is correct, but it's rendered as 'Government Warning:' (title case, not bold/all-caps) rather than 'GOVERNMENT WARNING:' — should WARN, not hard FAIL, per Jenny's real example."
+  },
+
+  "case6_missing_field": {
+    "application": {
+      "brand_name": "HARBOR LIGHT BREWING",
+      "class_type": "India Pale Ale",
+      "abv": "6.2% Alc./Vol.",
+      "net_contents": "12 FL OZ"
+    },
+    "expected": "FAIL overall. net_contents field FAILs with 'Net contents was not found on the label image' — label has no net contents text at all."
+  }
+}

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Label Verification</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Alcohol label verification</h1>
+    <p class="subtitle">Upload a label image and its application data to check for mismatches.</p>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="single">Single label</button>
+      <button class="tab-btn" data-tab="batch">Batch upload</button>
+    </div>
+
+    <!-- SINGLE MODE -->
+    <section id="single-tab" class="tab-panel active">
+      <form id="single-form" class="card">
+        <div class="field-row">
+          <label>Label image</label>
+          <input type="file" id="single-image" accept="image/*" required />
+        </div>
+
+        <div class="grid-2">
+          <div class="field-row">
+            <label>Brand name</label>
+            <input type="text" id="single-brand" placeholder="e.g. OLD TOM DISTILLERY" required />
+          </div>
+          <div class="field-row">
+            <label>Class / type</label>
+            <input type="text" id="single-class" placeholder="e.g. Kentucky Straight Bourbon Whiskey" required />
+          </div>
+          <div class="field-row">
+            <label>Alcohol content</label>
+            <input type="text" id="single-abv" placeholder="e.g. 45% Alc./Vol." required />
+          </div>
+          <div class="field-row">
+            <label>Net contents</label>
+            <input type="text" id="single-net" placeholder="e.g. 750 mL" required />
+          </div>
+        </div>
+
+        <button type="submit" id="single-submit">Verify label</button>
+      </form>
+
+      <div id="single-status" class="status"></div>
+      <div id="single-results" class="results"></div>
+    </section>
+
+    <!-- BATCH MODE -->
+    <section id="batch-tab" class="tab-panel">
+      <div id="batch-items"></div>
+      <button id="add-batch-item" type="button" class="secondary">+ Add another label</button>
+      <button id="submit-batch" type="button">Verify all</button>
+
+      <div id="batch-status" class="status"></div>
+      <div id="batch-results" class="results"></div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

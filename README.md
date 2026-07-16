@@ -1,118 +1,57 @@
-# **Take-Home Project: AI-Powered Alcohol Label Verification App**
+# Label verification prototype
 
-## **Project Background & Stakeholder Context**
+Checks whether an alcohol label image matches its application data. Built for the TTB label compliance take-home.
 
-*The following document contains notes from our discovery sessions with the Compliance Division, along with technical requirements for the prototype. We've included stakeholder feedback to give you context on how this tool will be used.*
+## Process
 
-### **Interview Notes: Sarah Chen, Deputy Director of Label Compliance**
+1. **Requirements** — extracted as user stories ("As a &lt;role&gt;, I want &lt;behavior&gt; so that &lt;benefit&gt;") directly from the stakeholder interview notes in the brief, rather than starting from assumed features.
+2. **Personas** — Jenny (primary user, high tech comfort), Dave (skeptical veteran, low tech comfort — stress-tests usability and false positives), Sarah (manager, cares about speed/adoption).
+3. **Scenarios** — concrete walkthroughs per persona (obvious pass, obvious mismatch, formatting-only near-match, missing warning, warning present but misformatted, batch upload), used to define the tri-state PASS/WARNING/FAIL model before writing any matching logic.
+4. **Architecture sketch** — decided on a single AI call (vision extraction) followed by deterministic comparison logic, specifically to keep results fast and explainable, before touching code.
+5. **Low-fidelity prototype** — wireframed the single-verification screen to validate the information hierarchy (upload → per-field results) before building it for real.
+6. **Implementation** — scaffolded the repo, built the comparator logic first and unit-tested it standalone (no API dependency), then wired up AI extraction, then the frontend.
+7. **Test data** — generated synthetic label images covering each scenario from step 3, each paired with expected output, so the comparator could be validated end-to-end.
+8. **Debugging & iteration** — mid-build AI provider swap (Anthropic → Gemini) due to an account hold unrelated to the code; fixed a Gemini schema-format incompatibility, a deprecated model ID, an overly strict warning-text comparison surfaced by real extraction output, and default "thinking" latency — each diagnosed from an actual error or observed result rather than guessed at.
 
-*Conducted Tuesday, 3:15 PM — Sarah was running late from her daughter's school play rehearsal*
+## Setup
 
-"Thanks for meeting with me. Sorry about the delay—my daughter's playing the lead in her school's production of *Annie*next week and rehearsals have been crazy. Anyway, let me tell you about what we're dealing with here.
+```bash
+npm install
+cp .env.example .env   # add your GEMINI_API_KEY (free key: aistudio.google.com)
+npm start               # http://localhost:3000
+```
 
-So the TTB reviews about 150,000 label applications a year. Our team of 47 agents handles all of them. Back in the 80s—before my time—they actually had over 100 agents, but budget cuts, you know how it goes. We've been doing things basically the same way since the COLA system went online in 2003. That was a big upgrade from paper forms, believe it or not.
+## Approach
 
-The actual review process is pretty straightforward. An agent pulls up an application, looks at the label artwork, and checks that what's on the label matches what's in the application. Brand name matches? Check. ABV is correct? Check. Government warning is there? Check. It takes maybe 5-10 minutes per application for a simple one, longer if there are issues.
+- **One AI call per verification.** Google Gemini's vision API reads structured fields off the label image (`server/lib/extractLabel.js`). Everything after that — the actual pass/fail logic — is plain deterministic JS (`server/lib/compareFields.js`), not a second AI call. This keeps latency low and makes every result explainable ("why did this fail?" has a concrete answer).
+- **Note on model choice:** this was originally built against the Anthropic API and swapped to Gemini partway through development, due to an Anthropic account hold unrelated to this project blocking API billing. The extraction module is isolated behind one function (`extractLabelFields`) specifically so a provider swap wouldn't touch the comparator or route logic — same JSON contract in, same JSON contract out. Either provider works equally well here; this isn't a statement about model quality.
+- **Tri-state matching, not boolean.** Each field returns `PASS`, `WARNING`, or `FAIL`:
+  - `PASS` — exact match (case/whitespace/punctuation-insensitive)
+  - `WARNING` — close but not identical (e.g. minor typo) — flagged for a human to glance at, not auto-rejected
+  - `FAIL` — clearly different, or missing entirely
+- **Batch mode reuses the single-verification function** in a loop with a concurrency cap of 5, rather than a separate code path.
+- Match rules are intentionally simple (obvious matches pass, obvious mismatches fail) rather than a precise implementation of TTB's actual adjudication standards — out of scope for this prototype.
 
-Here's the thing though—and this is what got leadership interested in AI—a lot of what we do is just... matching. Like literally just making sure the number on the form is the same as the number on the label. My agents spend half their day doing what's essentially data entry verification. It's not that they can't do more complex analysis, it's that they're drowning in routine stuff.
+## Assumptions & trade-offs
 
-Oh, I should mention—we tried a pilot with the scanning vendor last year. Disaster. The system would take 30, 40 seconds sometimes to process a single label. Our agents just went back to doing it by eye because they could do five labels in the time it took the machine to do one. **If we can't get results back in about 5 seconds, nobody's going to use it.** We learned that the hard way.
+- **No persistent storage.** Nothing is written to disk or a database; results exist only for the request/response cycle.
+- **No auth.** Out of scope for a prototype.
+- **No COLA integration.** Standalone tool per the discovery notes — not wired into the existing system.
+- **External API dependency.** This calls the Gemini API directly, which conflicts with the note that the target network blocks a lot of outbound traffic. A production version would likely need a vision model hosted in the agency's own VPC/cloud environment rather than calling a public API.
+- **Free-tier data usage.** Gemini's free tier may use submitted inputs/outputs to improve Google's models. Fine for a prototype with synthetic test labels, but a real deployment handling actual applicant data would need the paid tier (which opts out of this) or an on-prem model.
+- **Image quality handling is out of scope.** Angled photos, glare, poor lighting — the prototype assumes a reasonably legible image, consistent with treating this as a known limitation rather than building it under time constraints.
+- **Field extraction accuracy depends on the vision model** — this isn't validated against a large or adversarial label test set.
 
-What else... The agents really vary in their tech comfort level. Dave's been here since the Clinton administration and still prints his emails. Meanwhile, Jenny's fresh out of college and probably could have built this tool herself. We need something **my mother could figure out**—she's 73 and just learned to video call her grandkids last year, if that gives you a benchmark. Half our team is over 50. Clean, obvious, no hunting for buttons.
+## Testing
 
-One more thing that came up in our last team meeting—during peak season, we get these big importers who dump 200, 300 label applications on us at once. Right now we literally have to process them one at a time. If there was some way to **handle batch uploads**, that would be huge. Janet from our Seattle office has been asking about this for years."
+`server/lib/compareFields.js` has no external dependencies, so its logic can be sanity-checked directly:
 
-### **Interview Notes: Marcus Williams, IT Systems Administrator**
-
-*Coffee chat, Thursday morning*
-
-"Sarah probably gave you the business side. Let me fill you in on some of the technical landscape.
-
-Our current infrastructure is... well, it's government infrastructure, let's leave it at that. We're on Azure now after the migration in 2019. That was a whole thing—don't get me started on the FedRAMP certification process. Took 18 months just for the paperwork.
-
-The COLA system is built on .NET, though there's been talk about modernizing it for years. We had a contractor come in last summer to do an assessment and they quoted us $4.2 million for a full rebuild. That went nowhere, obviously.
-
-For this prototype, we're not looking to integrate with COLA directly—that's a whole different beast with its own authorization requirements. Think of this as a standalone proof-of-concept that could potentially inform future procurement decisions. If it works well, maybe we look at how to incorporate it into the workflow. But that's years away, realistically.
-
-Security-wise, we'd need to be careful with any production deployment—there's PII considerations, document retention policies, the usual federal compliance stuff. But for a prototype? Just don't do anything crazy. We're not storing anything sensitive for this exercise.
-
-Oh, and our network blocks outbound traffic to a lot of domains, so keep that in mind if you're thinking about cloud APIs. During the scanning vendor pilot, half their features didn't work because our firewall blocked connections to their ML endpoints. Classic."
-
-### **Interview Notes: Dave Morrison, Senior Compliance Agent (28 years)**
-
-*Brief hallway conversation*
-
-"Look, I'll be honest, I've seen a lot of these 'modernization' projects come and go. Remember the automated phone system they put in back in 2008? Supposed to reduce call volume. We ended up with more calls because nobody could figure out how to navigate it.
-
-The thing about label review is there's nuance. You can't just pattern match everything. Like, I had one last week where the brand name was 'STONE'S THROW' on the label but 'Stone's Throw' in the application. Technically a mismatch? Sure. But it's obviously the same thing. You need judgment.
-
-That said, I'm not against new tools. If something can help me get through my queue faster, great. Just don't make my life harder in the process. I spend enough time fighting with COLA as it is."
-
-### **Interview Notes: Jenny Park, Junior Compliance Agent (8 months)**
-
-*Teams call, Friday afternoon*
-
-"I'm so excited you're working on this! When I started here, I was kind of shocked at how manual everything is. Like, I literally have a printed checklist on my desk that I go through for every label. Brand name—check with my eyes. ABV—check with my eyes. Warning statement—check with my eyes. It's 2024!
-
-The one thing I'd say is the warning statement check is actually trickier than it sounds. It has to be **exact**. Like, word-for-word, and the 'GOVERNMENT WARNING:' part has to be in all caps and bold. Sarah probably mentioned this but people try to get creative with the warning all the time. Smaller font, different wording, burying it in tiny text. I caught one last month where they used 'Government Warning' in title case instead of all caps. Rejected.
-
-Also—and this is maybe out of scope for a prototype—but it would be amazing if the tool could handle images that aren't perfectly shot. I've seen labels that are photographed at weird angles, or the lighting is bad, or there's glare on the bottle. Right now if an agent can't read the label they just reject it and ask for a better image. But if AI could handle some of that..."
-
-## **Technical Requirements**
-
-You are free to use any programming languages, frameworks, or libraries you prefer. We want to see what kind of engineering, design, and integration decisions you make.
-
-## **Additional Context**
-
-### **About TTB Label Requirements**
-
-For reference, TTB requires specific information on alcohol beverage labels. The exact requirements vary by beverage type (beer, wine, distilled spirits) but common elements include:
-
-- Brand name
-- Class/type designation
-- Alcohol content (with some exceptions for certain wine/beer)
-- Net contents
-- Name and address of bottler/producer
-- Country of origin for imports
-- **Government Health Warning Statement** (mandatory on all alcohol beverages)
-
-We encourage you to review TTB's guidelines at ttb.gov for additional context on label requirements.
-
-### **Sample Label**
-
-Your app should handle labels containing information like the example below:
-
-**Example Distilled Spirits Label Fields:**
-
-- Brand Name: "OLD TOM DISTILLERY"
-- Class/Type: "Kentucky Straight Bourbon Whiskey"
-- Alcohol Content: "45% Alc./Vol. (90 Proof)"
-- Net Contents: "750 mL"
-- Government Warning: \[Standard government warning text\]
-
-*We encourage you to create or source additional test labels—AI image generation tools work well for this.*
-
-## **Deliverables**
-
-1. **Source Code Repository** (GitHub or similar)
-   - All source code
-   - README with setup and run instructions
-   - Brief documentation of approach, tools used, assumptions made
-2. **Deployed Application URL**
-   - Working prototype we can access and test
-
-## **Evaluation Criteria**
-
-- Correctness and completeness of core requirements
-- Code quality and organization
-- Appropriate technical choices for the scope
-- User experience and error handling
-- Attention to requirements
-- Creative problem-solving
-
-We understand this is time-constrained. A working core application with clean code is preferred over ambitious but incomplete features. Document any trade-offs or limitations.
-
-*Questions? Reach out for clarification—though we also value how you fill in gaps independently.*
-
-Good luck!
+```bash
+node -e '
+const { compareAll } = require("./server/lib/compareFields");
+console.log(compareAll(
+  { brand_name: "Old Tom Distillery", class_type: "x", abv: "45%", net_contents: "750 mL" },
+  { brand_name: "OLD TOM DISTILLERY", class_type: "x", abv: "45%", net_contents: "750 mL", warning_present: true, warning_text: "...", warning_all_caps_lead_in: true }
+));
+'
 ```
